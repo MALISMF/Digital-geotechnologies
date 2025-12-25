@@ -116,3 +116,35 @@ print("Producer's accuracy", confusionMatrix.producersAccuracy());
 
 // Calculate kappa statistic.
 print('Kappa statistic', confusionMatrix.kappa());
+
+
+// ---- vegetation layer
+
+
+var cityArea =  geometry.area()
+
+
+var cityAreaSqKm = ee.Number(cityArea).divide(1e6).round();
+print("angarsk layer area (km): ", cityAreaSqKm);
+
+
+var vegetationMask = classified.eq(3).clip(geometry);;
+
+
+Map.addLayer(vegetationMask, {min:0, max:1, palette: ['white', 'green']}, 'Green Cover');
+
+var areaImage = vegetationMask.multiply(ee.Image.pixelArea());
+
+
+
+var area = areaImage.reduceRegion({
+  reducer: ee.Reducer.sum(),
+  geometry: geometry,
+  scale: 10,
+  bestEffort:true,
+  maxPixels: 1e10
+});
+
+var vegetationAreaSqKm = area.getNumber('classification').divide(1e6).round();
+print("vegetation area (km): ", vegetationAreaSqKm);
+

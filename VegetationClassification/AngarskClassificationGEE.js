@@ -56,12 +56,12 @@ var gcps = urban.map(function(f) { return f.set('landcover', 0); })
 // Добавляем случайную колонку для разделения данных
 var gcps = gcps.randomColumn();
 
-// Делим данные: 70% на обучение, 30% на валидацию (тест)
+// Делим данные: 70% на обучение, 30% на валидацию
 var split = 0.7; 
 var trainingGcp = gcps.filter(ee.Filter.lt('random', split));
 var validationGcp = gcps.filter(ee.Filter.gte('random', split));
 
-// Сэмплинг (извлечение значений пикселей) для обучения
+// Сэмплинг для обучения
 var training = composite.sampleRegions({
    collection: trainingGcp, 
    properties: ['landcover'], 
@@ -98,23 +98,12 @@ var test = classified.sampleRegions({
   scale: 10,
 });
 
-// Создаем матрицу ошибок (Confusion Matrix)
-// Сравниваем 'landcover' (истина) с 'classification' (предсказание)
+
 var confusionMatrix = test.errorMatrix('landcover', 'classification');
 
-
-// Calculate overall accuracy.
 print("Overall accuracy", confusionMatrix.accuracy());
-
-// Calculate consumer's accuracy, also known as user's accuracy or
-// specificity and the complement of commission error (1 − commission error).
 print("Consumer's accuracy", confusionMatrix.consumersAccuracy());
-
-// Calculate producer's accuracy, also known as sensitivity and the
-// compliment of omission error (1 − omission error).
 print("Producer's accuracy", confusionMatrix.producersAccuracy());
-
-// Calculate kappa statistic.
 print('Kappa statistic', confusionMatrix.kappa());
 
 
@@ -126,7 +115,6 @@ var cityArea =  geometry.area()
 
 var cityAreaSqKm = ee.Number(cityArea).divide(1e6).round();
 print("angarsk layer area (km): ", cityAreaSqKm);
-
 
 var vegetationMask = classified.eq(3).clip(geometry);;
 
@@ -148,3 +136,39 @@ var area = areaImage.reduceRegion({
 var vegetationAreaSqKm = area.getNumber('classification').divide(1e6).round();
 print("vegetation area (km): ", vegetationAreaSqKm);
 
+// --- 5. КЛАСТЕРИЗАЦИЯ (UNSUPERVISED CLASSIFICATION) ---
+
+// 1. Подготовка обучающей выборки для кластеризатора
+var trainingForCluster = composite.clip(geometry).sample({
+  region: geometry,
+  scale: 10,
+  numPixels: 5000
+});
+
+// 2. Обучение кластеризатора (K-Means)
+var clusterer = ee.Clusterer.wekaKMeans(4).train(trainingForCluster);
+
+// 3. Применение кластеризации
+var clustered = composite.cluster(clusterer);
+
+// 4. Визуализация
+var clusteredRemapped = clustered.remap([0, 1, 2, 3], [3, 0, 1, 2]); 
+
+Map.addLayer(clusteredRemapped.clip(geometry), {min: 0, max: 3, palette: palette}, 'Clustering Result');
+
+// --- 6. ОЦЕНКА КАЧЕСТВА КЛАСТЕРИЗАЦИИ ---
+
+var clusterTest = clusteredRemapped.sampleRegions({
+  collection: validationGcp,
+  properties: ['landcover'],
+  scale: 10,
+  tileScale: 16
+});
+
+// Создаем матрицу ошибок
+var clusterConfusionMatrix = clusterTest.errorMatrix('landcover', 'remapped');
+
+print('--- Метрики кластеризации ---');
+print('Confusion Matrix (Clustering):', clusterConfusionMatrix);
+print('Overall Accuracy (Clustering):', clusterConfusionMatrix.accuracy());
+print('Kappa Statistic (Clustering):', clusterConfusionMatrix.kappa());
